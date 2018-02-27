@@ -7,8 +7,8 @@
     <ProjectGuid>{91335A40-DEAE-4B7E-A3BC-84D20363606F}</ProjectGuid>
     <OutputType>Exe</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>CRMWorklfowToSentry</RootNamespace>
-    <AssemblyName>CRMWorklfowToSentry</AssemblyName>
+    <RootNamespace>CRMWorkflowToSentry</RootNamespace>
+    <AssemblyName>CRMWorkflowToSentry</AssemblyName>
     <TargetFrameworkVersion>v4.5.2</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>

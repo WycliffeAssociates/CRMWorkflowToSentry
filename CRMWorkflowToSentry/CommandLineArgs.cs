@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using CommandLine.Text;
 using CommandLine;
 
-namespace CRMWorklfowToSentry
+namespace CRMWorkflowToSentry
 {
     class CommandLineArgs 
     {
