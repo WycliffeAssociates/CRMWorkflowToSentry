@@ -19,6 +19,9 @@ namespace CRMWorkflowToSentry
         [Option("days", Required = true, HelpText = "How many days to grab data for")]
         public int Days { get; set; }
 
+        [Option("smart", HelpText = "Filter more intelligently by excluding everything before the last run")]
+        public bool UseSmartFilter { get; set; }
+
         [Option("solution", HelpText = "Solution Name for version (not currently implemented)")]
         public string SolutionName { get; set; }
 

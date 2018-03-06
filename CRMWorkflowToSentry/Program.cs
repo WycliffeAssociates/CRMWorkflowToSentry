@@ -9,6 +9,7 @@ using Microsoft.Xrm.Tooling.Connector;
 using Microsoft.Xrm.Sdk.Query;
 using Microsoft.Xrm.Sdk;
 using CommandLine;
+using System.IO;
 
 namespace CRMWorkflowToSentry
 {
@@ -24,16 +25,23 @@ namespace CRMWorkflowToSentry
         }
         public static void Process(CommandLineArgs args)
         {
+            DateTime startTime = DateTime.Now;
+            DateTime filterStart = DateTime.MinValue;
+            if (args.UseSmartFilter && File.Exists("timestamp.txt"))
+            {
+                DateTime.TryParse(File.ReadAllText("timestamp.txt"), out filterStart);
+            }
             var ravenClient = new RavenClient(args.SentryDSN);
             Console.WriteLine("Connecting to Dynamics CRM");
             CrmServiceClient service = new CrmServiceClient(args.CRMConnectionString);
             Console.WriteLine("Looking for failed sync workflows");
-            ReportSyncWorkflowErrors(ravenClient, service, args.Days);
+            ReportSyncWorkflowErrors(ravenClient, service, args.Days, filterStart);
             Console.WriteLine("Looking for failed async workflows");
-            ReportAsyncWorkflowErrors(ravenClient, service, args.Days);
+            ReportAsyncWorkflowErrors(ravenClient, service, args.Days, filterStart);
+            File.WriteAllText("timestamp.txt", startTime.ToString());
         }
 
-        private static void ReportSyncWorkflowErrors(RavenClient ravenClient, CrmServiceClient service, int days)
+        private static void ReportSyncWorkflowErrors(RavenClient ravenClient, CrmServiceClient service, int days, DateTime filterStart)
         {
             FetchExpression fetch = new FetchExpression($@"
                 <fetch version=""1.0"" output-format=""xml-platform"" mapping=""logical"" distinct=""false"">
@@ -43,6 +51,7 @@ namespace CRMWorkflowToSentry
                     <attribute name=""regardingobjectid"" />
                     <attribute name=""comments"" />
                     <attribute name=""createdby"" />
+                    <attribute name=""modifiedon"" />
                     <order attribute=""startedon"" descending=""true"" />
                     <filter type=""and"">
                       <condition attribute=""statecode"" operator=""eq"" value=""1"" />
@@ -60,7 +69,7 @@ namespace CRMWorkflowToSentry
                 </fetch>
             ");
             var result = service.RetrieveMultiple(fetch);
-            foreach (var item in result.Entities)
+            foreach (var item in result.Entities.Where(d => (DateTime)d["modifiedon"] >= filterStart))
             {
                 string workflowName = "Unknown workflow";
                 if (item.Contains("link_workflow.name"))
@@ -85,7 +94,7 @@ namespace CRMWorkflowToSentry
                 ravenClient.Capture(sentryEvent);
             }
         }
-        private static void ReportAsyncWorkflowErrors( RavenClient ravenClient, IOrganizationService service, int days)
+        private static void ReportAsyncWorkflowErrors( RavenClient ravenClient, IOrganizationService service, int days, DateTime filterStart)
         {
             FetchExpression fetch = new FetchExpression($@"
                 <fetch version=""1.0"" output-format=""xml-platform"" mapping=""logical"" distinct=""false"">
@@ -98,6 +107,7 @@ namespace CRMWorkflowToSentry
                     <attribute name=""friendlymessage""/>
                     <attribute name=""startedon""/>
                     <attribute name=""createdby""/>
+                    <attribute name=""modifiedon"" />
                     <filter type=""and"">
                       <condition attribute=""operationtype"" operator=""eq"" value=""10""/>
                       <condition attribute=""errorcode"" operator=""not-null""/>
@@ -107,7 +117,7 @@ namespace CRMWorkflowToSentry
                 </fetch>
             ");
             var result = service.RetrieveMultiple(fetch);
-            foreach (var item in result.Entities)
+            foreach (var item in result.Entities.Where(d => (DateTime)d["modifiedon"] >= filterStart))
             {
                 var e = new Exception((string)item["message"]);
                 e.Source = (string)item["name"];
