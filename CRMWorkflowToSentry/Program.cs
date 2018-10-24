@@ -79,7 +79,7 @@ namespace CRMWorkflowToSentry
                 var e = new Exception((string)item["comments"]);
                 e.Source = workflowName;
                 e.Data["workflow"] = workflowName;
-                e.Data["target"] = (EntityReference)item["regardingobjectid"];
+                e.Data["target"] = item.Contains("regardingobjectid") ? (EntityReference)item["regardingobjectid"] : null;
                 e.Data["timestamp"] = (DateTime)item["startedon"];
                 e.Data["username"] = ((EntityReference)item["createdby"]).Name;
                 e.Data["type"] = "sync";
