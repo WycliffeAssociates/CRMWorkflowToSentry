@@ -84,10 +84,13 @@ namespace CRMWorkflowToSentry
                 {
                     workflowName = (string)((AliasedValue)item["link_workflow.name"]).Value;
                 }
+                
+                var regardingObjectRef = item.Contains("regardingobjectid") ? (EntityReference?)item["regardingobjectid"] : null;
+                
                 var e = new Exception((string)item["comments"]);
                 e.Source = workflowName;
                 e.Data["workflow"] = workflowName;
-                e.Data["target"] = item.Contains("regardingobjectid") ? (EntityReference)item["regardingobjectid"] : null;
+                e.Data["target"] = regardingObjectRef;
                 e.Data["timestamp"] = (DateTime)item["startedon"];
                 e.Data["username"] = ((EntityReference)item["createdby"]).Name;
                 e.Data["type"] = "sync";
@@ -99,8 +102,8 @@ namespace CRMWorkflowToSentry
                     scope.Contexts["Workflow"] = new
                     {
                         name = workflowName,
-                        target = item.Contains("regardingobjectid") ? ((EntityReference)item["regardingobjectid"]).LogicalName : null,
-                        targetId = item.Contains("regardingobjectid") ? (Guid?)((EntityReference)item["regardingobjectid"]).Id : null,
+                        target = regardingObjectRef?.LogicalName,
+                        targetId = regardingObjectRef?.Id,
                         timestamp = (DateTime)item["startedon"],
                         type = "sync"
                     };
@@ -132,17 +135,20 @@ namespace CRMWorkflowToSentry
             var result = service.RetrieveMultiple(fetch);
             foreach (var item in result.Entities.Where(d => (DateTime)d["modifiedon"] >= filterStart))
             {
+                var regardingObjectRef = item.Contains("regardingobjectid") ? (EntityReference?)item["regardingobjectid"] : null;
+                var dataValue = item.Contains("data") ? item["data"] : null;
+                
                 var e = new Exception((string)item["message"]);
                 e.Source = (string)item["name"];
                 e.Data["workflow"] = item["name"];
-                e.Data["target"] = item.Contains("regardingobjectid") ? (EntityReference)item["regardingobjectid"] : null;
+                e.Data["target"] = regardingObjectRef;
                 e.Data["timestamp"] = (DateTime)item["startedon"];
                 e.Data["username"] = ((EntityReference)item["createdby"]).Name;
                 e.Data["errorcode"] = item["errorcode"];
                 e.Data["type"] = "async";
-                if (item.Contains("data"))
+                if (dataValue != null)
                 {
-                    e.Data["data"] = item["data"];
+                    e.Data["data"] = dataValue;
                 }
                 
                 SentrySdk.CaptureException(e, scope =>
@@ -152,12 +158,12 @@ namespace CRMWorkflowToSentry
                     scope.Contexts["Workflow"] = new
                     {
                         name = (string)item["name"],
-                        target = item.Contains("regardingobjectid") ? ((EntityReference)item["regardingobjectid"]).LogicalName : null,
-                        targetId = item.Contains("regardingobjectid") ? (Guid?)((EntityReference)item["regardingobjectid"]).Id : null,
+                        target = regardingObjectRef?.LogicalName,
+                        targetId = regardingObjectRef?.Id,
                         timestamp = (DateTime)item["startedon"],
                         errorcode = item["errorcode"],
                         type = "async",
-                        data = item.Contains("data") ? item["data"] : null
+                        data = dataValue
                     };
                 });
             }
