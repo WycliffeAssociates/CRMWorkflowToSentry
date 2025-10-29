@@ -38,12 +38,14 @@ namespace CRMWorkflowToSentry
             }))
             {
                 Console.WriteLine("Connecting to Dynamics CRM");
-                ServiceClient service = new ServiceClient(args.CRMConnectionString);
-                Console.WriteLine("Looking for failed sync workflows");
-                ReportSyncWorkflowErrors(service, args.Days, filterStart);
-                Console.WriteLine("Looking for failed async workflows");
-                ReportAsyncWorkflowErrors(service, args.Days, filterStart);
-                File.WriteAllText("timestamp.txt", startTime.ToString());
+                using (ServiceClient service = new ServiceClient(args.CRMConnectionString))
+                {
+                    Console.WriteLine("Looking for failed sync workflows");
+                    ReportSyncWorkflowErrors(service, args.Days, filterStart);
+                    Console.WriteLine("Looking for failed async workflows");
+                    ReportAsyncWorkflowErrors(service, args.Days, filterStart);
+                    File.WriteAllText("timestamp.txt", startTime.ToString());
+                }
             }
         }
 
@@ -133,7 +135,7 @@ namespace CRMWorkflowToSentry
                 var e = new Exception((string)item["message"]);
                 e.Source = (string)item["name"];
                 e.Data["workflow"] = item["name"];
-                e.Data["target"] = (EntityReference)item["regardingobjectid"];
+                e.Data["target"] = item.Contains("regardingobjectid") ? (EntityReference)item["regardingobjectid"] : null;
                 e.Data["timestamp"] = (DateTime)item["startedon"];
                 e.Data["username"] = ((EntityReference)item["createdby"]).Name;
                 e.Data["errorcode"] = item["errorcode"];
@@ -150,8 +152,8 @@ namespace CRMWorkflowToSentry
                     scope.Contexts["Workflow"] = new
                     {
                         name = (string)item["name"],
-                        target = ((EntityReference)item["regardingobjectid"]).LogicalName,
-                        targetId = ((EntityReference)item["regardingobjectid"]).Id,
+                        target = item.Contains("regardingobjectid") ? ((EntityReference)item["regardingobjectid"]).LogicalName : null,
+                        targetId = item.Contains("regardingobjectid") ? (Guid?)((EntityReference)item["regardingobjectid"]).Id : null,
                         timestamp = (DateTime)item["startedon"],
                         errorcode = item["errorcode"],
                         type = "async",
