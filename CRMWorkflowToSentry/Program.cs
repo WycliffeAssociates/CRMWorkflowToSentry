@@ -3,9 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using SharpRaven;
-using SharpRaven.Data;
-using Microsoft.Xrm.Tooling.Connector;
+using Sentry;
+using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk.Query;
 using Microsoft.Xrm.Sdk;
 using CommandLine;
@@ -31,17 +30,26 @@ namespace CRMWorkflowToSentry
             {
                 DateTime.TryParse(File.ReadAllText("timestamp.txt"), out filterStart);
             }
-            var ravenClient = new RavenClient(args.SentryDSN);
-            Console.WriteLine("Connecting to Dynamics CRM");
-            CrmServiceClient service = new CrmServiceClient(args.CRMConnectionString);
-            Console.WriteLine("Looking for failed sync workflows");
-            ReportSyncWorkflowErrors(ravenClient, service, args.Days, filterStart);
-            Console.WriteLine("Looking for failed async workflows");
-            ReportAsyncWorkflowErrors(ravenClient, service, args.Days, filterStart);
-            File.WriteAllText("timestamp.txt", startTime.ToString());
+            
+            // Initialize Sentry
+            using (SentrySdk.Init(options =>
+            {
+                options.Dsn = args.SentryDSN;
+            }))
+            {
+                Console.WriteLine("Connecting to Dynamics CRM");
+                using (ServiceClient service = new ServiceClient(args.CRMConnectionString))
+                {
+                    Console.WriteLine("Looking for failed sync workflows");
+                    ReportSyncWorkflowErrors(service, args.Days, filterStart);
+                    Console.WriteLine("Looking for failed async workflows");
+                    ReportAsyncWorkflowErrors(service, args.Days, filterStart);
+                    File.WriteAllText("timestamp.txt", startTime.ToString());
+                }
+            }
         }
 
-        private static void ReportSyncWorkflowErrors(RavenClient ravenClient, CrmServiceClient service, int days, DateTime filterStart)
+        private static void ReportSyncWorkflowErrors(ServiceClient service, int days, DateTime filterStart)
         {
             FetchExpression fetch = new FetchExpression($@"
                 <fetch version=""1.0"" output-format=""xml-platform"" mapping=""logical"" distinct=""false"">
@@ -76,25 +84,33 @@ namespace CRMWorkflowToSentry
                 {
                     workflowName = (string)((AliasedValue)item["link_workflow.name"]).Value;
                 }
+                
+                var regardingObjectRef = item.Contains("regardingobjectid") ? (EntityReference?)item["regardingobjectid"] : null;
+                
                 var e = new Exception((string)item["comments"]);
                 e.Source = workflowName;
                 e.Data["workflow"] = workflowName;
-                e.Data["target"] = item.Contains("regardingobjectid") ? (EntityReference)item["regardingobjectid"] : null;
+                e.Data["target"] = regardingObjectRef;
                 e.Data["timestamp"] = (DateTime)item["startedon"];
                 e.Data["username"] = ((EntityReference)item["createdby"]).Name;
                 e.Data["type"] = "sync";
-                SentryEvent sentryEvent = new SentryEvent(e);
-                sentryEvent.Tags["username"] = ((EntityReference)item["createdby"]).Name;
-                sentryEvent.Tags["workflow"] = workflowName;
-                ravenClient.BeforeSend = requester =>
+                
+                SentrySdk.CaptureException(e, scope =>
                 {
-                    requester.Packet.TimeStamp = (DateTime)item["startedon"];
-                    return requester;
-                };
-                ravenClient.Capture(sentryEvent);
+                    scope.SetTag("username", ((EntityReference)item["createdby"]).Name);
+                    scope.SetTag("workflow", workflowName);
+                    scope.Contexts["Workflow"] = new
+                    {
+                        name = workflowName,
+                        target = regardingObjectRef?.LogicalName,
+                        targetId = regardingObjectRef?.Id,
+                        timestamp = (DateTime)item["startedon"],
+                        type = "sync"
+                    };
+                });
             }
         }
-        private static void ReportAsyncWorkflowErrors( RavenClient ravenClient, IOrganizationService service, int days, DateTime filterStart)
+        private static void ReportAsyncWorkflowErrors(IOrganizationService service, int days, DateTime filterStart)
         {
             FetchExpression fetch = new FetchExpression($@"
                 <fetch version=""1.0"" output-format=""xml-platform"" mapping=""logical"" distinct=""false"">
@@ -119,27 +135,37 @@ namespace CRMWorkflowToSentry
             var result = service.RetrieveMultiple(fetch);
             foreach (var item in result.Entities.Where(d => (DateTime)d["modifiedon"] >= filterStart))
             {
+                var regardingObjectRef = item.Contains("regardingobjectid") ? (EntityReference?)item["regardingobjectid"] : null;
+                var dataValue = item.Contains("data") ? item["data"] : null;
+                
                 var e = new Exception((string)item["message"]);
                 e.Source = (string)item["name"];
                 e.Data["workflow"] = item["name"];
-                e.Data["target"] = (EntityReference)item["regardingobjectid"];
+                e.Data["target"] = regardingObjectRef;
                 e.Data["timestamp"] = (DateTime)item["startedon"];
                 e.Data["username"] = ((EntityReference)item["createdby"]).Name;
                 e.Data["errorcode"] = item["errorcode"];
                 e.Data["type"] = "async";
-                if (item.Contains("data"))
+                if (dataValue != null)
                 {
-                    e.Data["data"] = item["data"];
+                    e.Data["data"] = dataValue;
                 }
-                SentryEvent sentryEvent = new SentryEvent(e);
-                sentryEvent.Tags["username"] = ((EntityReference)item["createdby"]).Name;
-                sentryEvent.Tags["workflow"] = (string)item["name"];
-                ravenClient.BeforeSend = requester =>
+                
+                SentrySdk.CaptureException(e, scope =>
                 {
-                    requester.Packet.TimeStamp = (DateTime)item["startedon"];
-                    return requester;
-                };
-                ravenClient.Capture(sentryEvent);
+                    scope.SetTag("username", ((EntityReference)item["createdby"]).Name);
+                    scope.SetTag("workflow", (string)item["name"]);
+                    scope.Contexts["Workflow"] = new
+                    {
+                        name = (string)item["name"],
+                        target = regardingObjectRef?.LogicalName,
+                        targetId = regardingObjectRef?.Id,
+                        timestamp = (DateTime)item["startedon"],
+                        errorcode = item["errorcode"],
+                        type = "async",
+                        data = dataValue
+                    };
+                });
             }
         }
     }

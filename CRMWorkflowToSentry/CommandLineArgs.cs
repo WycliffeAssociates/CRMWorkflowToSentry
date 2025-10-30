@@ -11,10 +11,10 @@ namespace CRMWorkflowToSentry
     class CommandLineArgs 
     {
         [Option('c',"crm", Required = true, HelpText = "CRM connection string")]
-        public string CRMConnectionString { get; set; }
+        public string CRMConnectionString { get; set; } = string.Empty;
 
         [Option('s',"sentry", Required = true, HelpText = "Sentry DSN")]
-        public string SentryDSN { get; set; }
+        public string SentryDSN { get; set; } = string.Empty;
 
         [Option("days", Required = true, HelpText = "How many days to grab data for")]
         public int Days { get; set; }
@@ -23,7 +23,7 @@ namespace CRMWorkflowToSentry
         public bool UseSmartFilter { get; set; }
 
         [Option("solution", HelpText = "Solution Name for version (not currently implemented)")]
-        public string SolutionName { get; set; }
+        public string? SolutionName { get; set; }
 
     }
 }
